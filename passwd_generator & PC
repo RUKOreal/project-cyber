@@ -1,0 +1,154 @@
+# 📂 โหลดรายชื่อรหัสผ่านที่พบบ่อยจากไฟล์
+COMMON_PASSWORDS = set()
+try:
+    with open("np_for_project.txt", "r", encoding="utf-8") as f:
+        COMMON_PASSWORDS = {line.strip().lower() for line in f if line.strip()}
+    print(f"โหลดรหัสผ่านที่พบบ่อย {len(COMMON_PASSWORDS)} รายการแล้ว ✅")
+except FileNotFoundError:
+    print("⚠️ ไม่พบไฟล์ np_for_project.txt กรุณาอัปโหลดก่อนรันโค้ดนี้")
+
+import secrets, string, re, math
+
+# -----------------------
+# Password Generator
+# -----------------------
+
+def generate_password(length=16, use_lower=True, use_upper=True,
+                      use_digits=True, use_symbols=True,
+                      avoid_ambiguous=True, require_each=True):
+    ambiguous = "Il1O0|`'\";:,.()[]{}<>"
+    lower = string.ascii_lowercase
+    upper = string.ascii_uppercase
+    digits = string.digits
+    symbols = "!@#$%^&*+-_=~/?"
+    if avoid_ambiguous:
+        trans = {ord(c): None for c in ambiguous}
+        lower = lower.translate(trans)
+        upper = upper.translate(trans)
+        digits = digits.translate(trans)
+
+    pools = []
+    if use_lower: pools.append(lower)
+    if use_upper: pools.append(upper)
+    if use_digits: pools.append(digits)
+    if use_symbols: pools.append(symbols)
+
+    alphabet = "".join(pools)
+    if not alphabet:
+        raise ValueError("ต้องเลือกอักขระอย่างน้อยหนึ่งชุด")
+    if length <= 0:
+        raise ValueError("ความยาวต้องมากกว่า 0")
+
+    required = []
+    if require_each:
+        if use_lower: required.append(secrets.choice(lower))
+        if use_upper: required.append(secrets.choice(upper))
+        if use_digits: required.append(secrets.choice(digits))
+        if use_symbols: required.append(secrets.choice(symbols))
+        if len(required) > length:
+            raise ValueError("ความยาวสั้นเกินไปสำหรับเงื่อนไขนี้")
+
+    body = [secrets.choice(alphabet) for _ in range(length - len(required))]
+    chars = required + body
+    for i in range(len(chars) - 1, 0, -1):
+        j = secrets.randbelow(i + 1)
+        chars[i], chars[j] = chars[j], chars[i]
+    return "".join(chars)
+
+# -----------------------
+# Strength Checker
+# -----------------------
+
+def estimate_entropy(password):
+    pool = 0
+    if re.search(r"[a-z]", password): pool += 26
+    if re.search(r"[A-Z]", password): pool += 26
+    if re.search(r"\d", password): pool += 10
+    if re.search(r"[^\w\s]", password): pool += 32
+    return len(password) * math.log2(pool) if pool else 0.0
+
+def check_strength(password):
+    length = len(password)
+    entropy = estimate_entropy(password)
+    score = min(int(entropy), 100)
+
+    categories = {
+        "lower": bool(re.search(r"[a-z]", password)),
+        "upper": bool(re.search(r"[A-Z]", password)),
+        "digit": bool(re.search(r"\d", password)),
+        "symbol": bool(re.search(r"[^\w\s]", password)),
+    }
+    diversity = sum(categories.values())
+    score += (diversity - 1) * 5
+    score += max(0, min(15, (length - 8)))
+
+    penalties = 0
+    if password.lower() in COMMON_PASSWORDS: penalties += 50
+    if diversity <= 1: penalties += 15
+    if length < 8: penalties += (8 - length) * 5
+    if re.search(r"(.)\1{2,}", password): penalties += 10
+    if re.search(r"(?:0123|1234|abcd|qwer|asdf|zxcv)", password.lower()): penalties += 10
+
+    score = max(0, min(100, score - penalties))
+
+    if score < 25:
+        label = "Very Weak"
+    elif score < 50:
+        label = "Weak"
+    elif score < 70:
+        label = "Medium"
+    elif score < 85:
+        label = "Strong"
+    else:
+        label = "Excellent"
+
+    suggestions = []
+    if length < 12: suggestions.append("เพิ่มความยาวอย่างน้อย 12 ตัวอักษร")
+    if not categories["upper"]: suggestions.append("เพิ่มตัวอักษรพิมพ์ใหญ่ (A–Z)")
+    if not categories["lower"]: suggestions.append("เพิ่มตัวอักษรพิมพ์เล็ก (a–z)")
+    if not categories["digit"]: suggestions.append("เพิ่มตัวเลข (0–9)")
+    if not categories["symbol"]: suggestions.append("เพิ่มสัญลักษณ์ (!@#$...)")
+
+    return {
+        "score": score,
+        "label": label,
+        "entropy": round(entropy, 2),
+        "length": length,
+        "suggestions": suggestions
+    }
+
+# -----------------------
+# CLI
+# -----------------------
+
+def run_cli():
+    print("🔐 Password Generator & Strength Checker (Colab)")
+    while True:
+        mode = input("[G]enerate / [C]heck / [Q]uit: ").strip().lower()
+        if mode == "q":
+            print("จบการทำงาน")
+            break
+        elif mode == "g":
+            try:
+                length = int(input("ความยาวรหัสผ่าน (เช่น 16): ") or "16")
+                pw = generate_password(length)
+                print(f"\nรหัสผ่าน: {pw}")
+                result = check_strength(pw)
+                print(f"คะแนน: {result['score']}/100 | {result['label']} | Entropy ≈ {result['entropy']} บิต\n")
+            except Exception as e:
+                print("❌ เกิดข้อผิดพลาด:", e)
+        elif mode == "c":
+            pw = input("ใส่รหัสผ่านที่ต้องการตรวจสอบ: ")
+            result = check_strength(pw)
+            print(f"ความยาว: {result['length']} | Entropy ≈ {result['entropy']} บิต")
+            print(f"คะแนน: {result['score']}/100 => {result['label']}")
+            if result["suggestions"]:
+                print("คำแนะนำ:")
+                for s in result["suggestions"]:
+                    print(" -", s)
+            print()
+        else:
+            print("โปรดเลือก G, C หรือ Q")
+
+# รัน CLI
+run_cli()
