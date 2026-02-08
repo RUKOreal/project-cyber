@@ -1,1 +1,1 @@
-# project-cyber
+# password generator & strength checker
